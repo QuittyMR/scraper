@@ -157,6 +157,9 @@ build generates a composite function that includes all filter predicates,
 using closures for eager evaluation of the values.
 */
 func (filter *Filters) build() {
+	if filter.match != nil {
+		return
+	}
 	var predicates []predicate
 
 	// Default noFilter
