@@ -1,8 +1,8 @@
 package targets
 
 import (
+	"bitbucket.org/Quitty/scraper/utils"
 	"fmt"
-	"quitty.tech/scraper/utils"
 )
 
 func (target responseTarget) UriError(err error) {

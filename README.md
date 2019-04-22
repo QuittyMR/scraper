@@ -27,12 +27,12 @@ for _, table := range myScraper.FindAll(scraper.Filters{Tag:"table", Parameters:
 
 * Render the HTML of Github's code-block:
 ```
-myScraper, _ := scraper.NewFromURI("quitty.tech/scraper/src/targets/node.go")
+myScraper, _ := scraper.NewFromURI("Some Github code page")
 myScraper.Content()
 ```
 
 ## Next steps
-* Find and FindOne implementations
+* ~~Find and FindOne implementations~~
 * Concurrent scraping
 * Tests
 * Resilience for broken pages (BeautifulSoup-esque)

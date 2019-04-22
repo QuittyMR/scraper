@@ -4,10 +4,10 @@ Package scraper provides a straightforward interface for scraping web content.
 package scraper
 
 import (
+	"bitbucket.org/Quitty/scraper/targets"
 	"fmt"
 	"golang.org/x/net/html"
 	"net/http"
-	"quitty.tech/scraper/targets"
 )
 
 /*

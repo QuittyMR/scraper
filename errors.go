@@ -1,8 +1,8 @@
 package scraper
 
 import (
+	"bitbucket.org/Quitty/scraper/utils"
 	"fmt"
-	"quitty.tech/scraper/utils"
 )
 
 func (scraper Scraper) parsingError(err error) {
