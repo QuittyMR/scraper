@@ -1,10 +1,13 @@
+/*
+Package scraper provides a straightforward interface for scraping web content.
+*/
 package scraper
 
 import (
 	"fmt"
 	"golang.org/x/net/html"
 	"net/http"
-	"quitty.tech/Scraper/targets"
+	"quitty.tech/scraper/targets"
 )
 
 /*
@@ -44,14 +47,6 @@ func (scraper Scraper) String() string {
 }
 
 /*
-NewFromNode instantiates a new Scraper instance from a given `html.Node` (golang.org/x/net/html).
-It is used internally to allow scraping the results of a previous scrape, but provided here if you want to build a hybrid.
-*/
-func NewFromNode(node *html.Node) (*Scraper, error) {
-	return newFromTarget(targets.NewFromNode(node.Data, node))
-}
-
-/*
 NewFromURI instantiates a new Scraper instance from a given uri string.
 It is a convenience method that handles the mandatory (net/http) boilerplate.
 */
@@ -69,21 +64,48 @@ func NewFromResponse(response *http.Response) (*Scraper, error) {
 }
 
 /*
+NewFromNode instantiates a new Scraper instance from a given `html.Node` (golang.org/x/net/html).
+It is used internally to allow scraping the results of a previous scrape, but provided here if you want to build a hybrid.
+*/
+func NewFromNode(node *html.Node) (*Scraper, error) {
+	return newFromTarget(targets.NewFromNode(node.Data, node))
+}
+
+/*
 Content returns a rendered version of the Scraper's content.
 Note that the rendering is best-effort (see golang.org/x/net/html/render.go)
 */
-func (scraper *Scraper) Content() string {
+func (scraper Scraper) Content() string {
 	return (*scraper.target).Content()
 }
 
 /*
-FindAll returns all nodes matching the provided `Filters`.
+Find returns the first node encountered matching the provided Filters (depth-first traversal)
+*/
+func (scraper Scraper) Find(filter Filters) *Scraper {
+	//TODO: Find elegant way to merge with FindAll
+	filter.build()
+	incomingNodes := make(chan *html.Node, 1)
+	go func() {
+		findAll(incomingNodes, scraper.Scope, filter, false)
+	}()
+
+	for matchingNode := range incomingNodes {
+		nodeName := fmt.Sprintf("%v.%v", (*scraper.target).Name(), matchingNode.Data)
+		nodeScraper, _ := newFromTarget(targets.NewFromNode(nodeName, matchingNode))
+		return nodeScraper
+	}
+	return nil
+}
+
+/*
+FindAll returns all nodes matching the provided Filters
 */
 func (scraper Scraper) FindAll(filter Filters) (matchingNodes []*Scraper) {
 	filter.build()
 	incomingNodes := make(chan *html.Node, 1)
 	go func() {
-		findAll(incomingNodes, scraper.Scope, filter)
+		findAll(incomingNodes, scraper.Scope, filter, true)
 		close(incomingNodes)
 	}()
 
@@ -93,6 +115,21 @@ func (scraper Scraper) FindAll(filter Filters) (matchingNodes []*Scraper) {
 		matchingNodes = append(matchingNodes, nodeScraper)
 	}
 	return
+}
+
+func findAll(matchingNodes chan<- *html.Node, node *html.Node, filter Filters, isExhaustive bool) {
+	for subNode := node; subNode != nil; subNode = subNode.NextSibling {
+		if filter.match(subNode) {
+			matchingNodes <- subNode
+			if !isExhaustive {
+				close(matchingNodes)
+				return
+			}
+		}
+		if subNode.FirstChild != nil {
+			findAll(matchingNodes, subNode.FirstChild, filter, isExhaustive)
+		}
+	}
 }
 
 /*
@@ -113,17 +150,6 @@ func newFromTarget(target *targets.Target) (scraper *Scraper, err error) {
 	node, err := (*scraper.target).Parse()
 	scraper.Scope = node
 	return
-}
-
-func findAll(matchingNodes chan<- *html.Node, node *html.Node, filter Filters) {
-	for subNode := node; subNode != nil; subNode = subNode.NextSibling {
-		if filter.match(subNode) {
-			matchingNodes <- subNode
-		}
-		if subNode.FirstChild != nil {
-			findAll(matchingNodes, subNode.FirstChild, filter)
-		}
-	}
 }
 
 /*

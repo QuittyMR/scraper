@@ -1,3 +1,6 @@
+/*
+package utils provides non-specific functionality to the library
+*/
 package utils
 
 import "github.com/pkg/errors"

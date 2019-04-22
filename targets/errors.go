@@ -2,7 +2,7 @@ package targets
 
 import (
 	"fmt"
-	"quitty.tech/Scraper/utils"
+	"quitty.tech/scraper/utils"
 )
 
 func (target responseTarget) UriError(err error) {

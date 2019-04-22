@@ -2,7 +2,7 @@ package scraper
 
 import (
 	"fmt"
-	"quitty.tech/Scraper/utils"
+	"quitty.tech/scraper/utils"
 )
 
 func (scraper Scraper) parsingError(err error) {

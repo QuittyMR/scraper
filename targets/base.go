@@ -1,3 +1,6 @@
+/*
+package targets provides ways to represent data sources that can be parsed by the scraper
+*/
 package targets
 
 import "golang.org/x/net/html"
