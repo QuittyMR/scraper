@@ -6,6 +6,7 @@ package scraper
 import (
 	"golang.org/x/net/html"
 	"io"
+	"sync"
 )
 
 /*
@@ -13,7 +14,8 @@ Scraper is the base type used to scrape content.
 Do not instantiate it directly - rather use one of the provided scraper.New functions
 */
 type Scraper struct {
-	target Target
+	target   Target
+	lastNode *html.Node
 }
 
 /*
@@ -23,12 +25,14 @@ Note that multiple filter arguments are resolved with an `&&` operator.
 	scraperInstance.FindAll(scraper.Filters{Tag:"html"})
 */
 type Filters struct {
-	Tag        string
-	Attributes Attributes
-	match      predicate
+	Tag           string
+	Attributes    Attributes
+	AttributeKeys AttributeKeys
+	match         predicate
 }
 
 type Attributes map[string]string
+type AttributeKeys []string
 
 /*
 Attributes specifies tag attributes to be searched for using the Scraper's Find methods.
@@ -85,58 +89,49 @@ func (scraper Scraper) GetAttributes() Attributes {
 	return attributes
 }
 
-/*
-Find returns the first node encountered matching the provided Filters (depth-first traversal)
-*/
-func (scraper Scraper) Find(filter Filters) *Scraper {
-	//TODO: Find elegant way to merge with FindAll
-	filter.build()
-	incomingNodes := make(chan *html.Node)
-
-	go func() {
-		findAll(incomingNodes, scraper.target.Content(), filter, false)
-	}()
-
-	for matchingNode := range incomingNodes {
-		//TODO: handle?
-		nodeScraper, _ := newFromTarget(newTargetFromNode(matchingNode))
-		return nodeScraper
+func (scraper Scraper) Find(filters Filters) *Scraper {
+	//TODO: Replace with a non-concurrent approach
+	for result := range scraper.FindAll(filters) {
+		return result
 	}
-
 	return nil
 }
 
 /*
 FindAll returns all nodes matching the provided Filters
 */
-func (scraper Scraper) FindAll(filter Filters) (matchingNodes []*Scraper) {
-	filter.build()
-	incomingNodes := make(chan *html.Node, 1)
+func (scraper Scraper) FindAll(filters Filters) <-chan *Scraper {
+	filters.build()
+	operations := sync.WaitGroup{}
+	matchingNodes := make(chan *Scraper, 1)
+
+	findInNode := func(node *html.Node) {
+		if filters.match(node) {
+			nodeScraper, _ := NewFromNode(node)
+			matchingNodes <- nodeScraper
+		}
+	}
+
+	operations.Add(1)
+	go searchTreeLayer(&operations, scraper.GetContent(), findInNode)
+
 	go func() {
-		findAll(incomingNodes, scraper.target.Content(), filter, true)
-		close(incomingNodes)
+		operations.Wait()
+		close(matchingNodes)
 	}()
 
-	for matchingNode := range incomingNodes {
-		nodeScraper, _ := newFromTarget(newTargetFromNode(matchingNode))
-		matchingNodes = append(matchingNodes, nodeScraper)
-	}
-	return
+	return matchingNodes
 }
 
-func findAll(matchingNodes chan<- *html.Node, node *html.Node, filter Filters, isExhaustive bool) {
+func searchTreeLayer(operations *sync.WaitGroup, node *html.Node, callable func(node2 *html.Node)) {
+	//TODO: Benchmark synchronous approach (remove goroutine calls and WaitGroup)
 	for subNode := node; subNode != nil; subNode = subNode.NextSibling {
-		if filter.match(subNode) {
-			matchingNodes <- subNode
-			if !isExhaustive {
-				close(matchingNodes)
-				return
-			}
-		}
-		if subNode.FirstChild != nil {
-			findAll(matchingNodes, subNode.FirstChild, filter, isExhaustive)
-		}
+		callable(subNode)
+
+		operations.Add(1)
+		go searchTreeLayer(operations, subNode.FirstChild, callable)
 	}
+	operations.Done()
 }
 
 /*
@@ -158,7 +153,19 @@ func newFromTarget(target Target) (scraper *Scraper, err error) {
 	}
 
 	scraper = &Scraper{target: target}
+	scraper.lastNode = scraper.getLastSubNode(nil)
 	return
+}
+
+func (scraper Scraper) getLastSubNode(node *html.Node) *html.Node {
+	if node == nil {
+		node = scraper.GetContent()
+	}
+	if node.LastChild == nil && node.NextSibling == nil {
+		return node
+	} else {
+		return scraper.getLastSubNode(node.LastChild)
+	}
 }
 
 /*
@@ -197,6 +204,21 @@ func (filter *Filters) build() {
 				return false
 			}
 		}(attribute, attributeValue)
+
+		predicates = append(predicates, predicateFunc)
+	}
+
+	for _, attributeKey := range filter.AttributeKeys {
+		predicateFunc := func(attributeKey string) func(node *html.Node) bool {
+			return func(node *html.Node) bool {
+				for _, nodeAttribute := range node.Attr {
+					if nodeAttribute.Key == attributeKey {
+						return true
+					}
+				}
+				return false
+			}
+		}(attributeKey)
 
 		predicates = append(predicates, predicateFunc)
 	}
