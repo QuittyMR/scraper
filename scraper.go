@@ -6,6 +6,7 @@ package scraper
 import (
 	"golang.org/x/net/html"
 	"io"
+	"strings"
 	"sync"
 )
 
@@ -14,8 +15,7 @@ Scraper is the base type used to scrape content.
 Do not instantiate it directly - rather use one of the provided scraper.New functions
 */
 type Scraper struct {
-	target   Target
-	lastNode *html.Node
+	target Target
 }
 
 /*
@@ -73,22 +73,60 @@ func (scraper Scraper) Render() (string, error) {
 	return scraper.target.Render()
 }
 
-func (scraper Scraper) GetContent() *html.Node {
+/*
+Content returns the node the Scraper instance is wrapping. It should be considered a lower-level API
+*/
+func (scraper Scraper) Content() *html.Node {
 	return scraper.target.Content()
 }
 
-func (scraper Scraper) GetType() string {
-	return scraper.GetContent().Data
+/*
+Type returns the tag type for HTML nodes. For text nodes, it will return the text itself
+*/
+func (scraper Scraper) Type() string {
+	return scraper.Content().Data
 }
 
-func (scraper Scraper) GetAttributes() Attributes {
+/*
+Attributes returns a map of all attributes on the node
+*/
+func (scraper Scraper) Attributes() Attributes {
 	attributes := Attributes{}
-	for _, attribute := range scraper.GetContent().Attr {
+	for _, attribute := range scraper.Content().Attr {
 		attributes[attribute.Key] = attribute.Val
 	}
 	return attributes
 }
 
+/*
+Text returns the text embedded in the node.
+If other tags are nested under it, it will return an empty string and false OK
+*/
+func (scraper Scraper) Text() (string, bool) {
+	content := scraper.Content()
+	text := strings.Builder{}
+	for child := content.FirstChild; child != nil; child = child.NextSibling {
+		if child.Type != html.TextNode {
+			return "", false
+		}
+		text.WriteString(child.Data)
+	}
+	return text.String(), true
+}
+
+/*
+TextO is an optimistic version of Text that will simply return an empty string if anything goes wrong (see Text docs).
+It is useful for inlining operations if you trust your inputs
+*/
+func (scraper Scraper) TextO() string {
+	text, _ := scraper.Text()
+	return text
+}
+
+/*
+Find returns the first node matching the provided Filters.
+Note that this method is currently very inefficient and needs to be reimplemented
+*/
 func (scraper Scraper) Find(filters Filters) *Scraper {
 	//TODO: Replace with a non-concurrent approach
 	for result := range scraper.FindAll(filters) {
@@ -113,12 +151,12 @@ func (scraper Scraper) FindAll(filters Filters) <-chan *Scraper {
 	}
 
 	operations.Add(1)
-	go searchTreeLayer(&operations, scraper.GetContent(), findInNode)
+	go searchTreeLayer(&operations, scraper.Content(), findInNode)
 
-	go func() {
+	go func(operations *sync.WaitGroup) {
 		operations.Wait()
 		close(matchingNodes)
-	}()
+	}(&operations)
 
 	return matchingNodes
 }
@@ -126,6 +164,9 @@ func (scraper Scraper) FindAll(filters Filters) <-chan *Scraper {
 func searchTreeLayer(operations *sync.WaitGroup, node *html.Node, callable func(node2 *html.Node)) {
 	//TODO: Benchmark synchronous approach (remove goroutine calls and WaitGroup)
 	for subNode := node; subNode != nil; subNode = subNode.NextSibling {
+		if subNode.Type == html.TextNode {
+			continue
+		}
 		callable(subNode)
 
 		operations.Add(1)
@@ -153,13 +194,12 @@ func newFromTarget(target Target) (scraper *Scraper, err error) {
 	}
 
 	scraper = &Scraper{target: target}
-	scraper.lastNode = scraper.getLastSubNode(nil)
 	return
 }
 
 func (scraper Scraper) getLastSubNode(node *html.Node) *html.Node {
 	if node == nil {
-		node = scraper.GetContent()
+		node = scraper.Content()
 	}
 	if node.LastChild == nil && node.NextSibling == nil {
 		return node
