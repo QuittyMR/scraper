@@ -6,7 +6,7 @@ import (
 
 //
 //import (
-//	"bitbucket.org/Quitty/scraper"
+//	"github.com/quittymr/scraper"
 //	"bytes"
 //	"golang.org/x/net/html"
 //	"io/ioutil"
