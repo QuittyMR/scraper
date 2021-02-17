@@ -18,7 +18,14 @@ func TestEmptyTarget_Content(t *testing.T) {
 		fields fields
 		want   *html.Node
 	}{
-		// TODO: Add test cases.
+		{
+			name: "empty target",
+			fields: fields{
+				name:    "empty target",
+				content: new(html.Node),
+			},
+			want: &(html.Node{}),
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -192,7 +199,7 @@ func TestScraper_Find(t *testing.T) {
 		target Target
 	}
 	type args struct {
-		filters Filters
+		filters Filter
 	}
 	tests := []struct {
 		name   string
@@ -219,7 +226,7 @@ func TestScraper_FindAll(t *testing.T) {
 		target Target
 	}
 	type args struct {
-		filters Filters
+		filters Filter
 	}
 	tests := []struct {
 		name   string
@@ -314,7 +321,7 @@ func TestScraper_TextO(t *testing.T) {
 			scraper := Scraper{
 				target: tt.fields.target,
 			}
-			if got := scraper.TextO(); got != tt.want {
+			if got := scraper.TextOptimistic(); got != tt.want {
 				t.Errorf("TextO() = %v, want %v", got, tt.want)
 			}
 		})

@@ -4,6 +4,7 @@ Package scraper provides a straightforward interface for scraping web content.
 package scraper
 
 import (
+	"fmt"
 	"golang.org/x/net/html"
 	"io"
 	"strings"
@@ -19,28 +20,26 @@ type Scraper struct {
 }
 
 /*
-Filters is the input to the Scraper's Find methods. It can be populated by a tag type, parameters (see `Attributes`) or both.
+Filter is the input to the Scraper's Find methods. It can be populated by a tag type, parameters (see `Attributes`) or both.
 Note that multiple filter arguments are resolved with an `&&` operator.
 
-	scraperInstance.FindAll(scraper.Filters{Tag:"html"})
+	scraperInstance.FindAll(scraper.Filter{Tag:"div"})
 */
-type Filters struct {
-	Tag           string
-	Attributes    Attributes
-	AttributeKeys AttributeKeys
-	match         predicate
+type Filter struct {
+	Tag        string
+	Attributes Attributes
+	IsExact    bool
+	match      predicate
 }
-
-type Attributes map[string]string
-type AttributeKeys []string
 
 /*
 Attributes specifies tag attributes to be searched for using the Scraper's Find methods.
 It is a convenience shorthand for `map[string]string` and can contain any number of attribute sets.
 Note that multiple parameters are resolved with an `&&` operator.
 
-	scraperInstance.FindAll(scraper.Filters(Attributes:scraper.Attributes{"class":"someClass"}))
+	scraperInstance.FindAll(scraper.Filter(Attributes:scraper.Attributes{"class":"someClass"}))
 */
+type Attributes map[string]string
 
 type predicate func(node *html.Node) bool
 
@@ -91,9 +90,9 @@ func (scraper Scraper) Type() string {
 Attributes returns a map of all attributes on the node
 */
 func (scraper Scraper) Attributes() Attributes {
-	attributes := Attributes{}
-	for _, attribute := range scraper.Content().Attr {
-		attributes[attribute.Key] = attribute.Val
+	attributes := make(Attributes)
+	for _, nodeAttribute := range scraper.Content().Attr {
+		attributes[nodeAttribute.Key] = nodeAttribute.Val
 	}
 	return attributes
 }
@@ -118,40 +117,40 @@ func (scraper Scraper) Text() (string, bool) {
 TextO is an optimistic version of Text that will simply return an empty string if anything goes wrong (see Text docs).
 It is useful for inlining operations if you trust your inputs
 */
-func (scraper Scraper) TextO() string {
+func (scraper Scraper) TextOptimistic() string {
 	text, _ := scraper.Text()
 	return text
 }
 
 /*
-Find returns the first node matching the provided Filters.
+Find returns the first node matching the provided Filter.
 Note that this method is currently very inefficient and needs to be reimplemented
 */
-func (scraper Scraper) Find(filters Filters) *Scraper {
+func (scraper Scraper) Find(filter Filter) *Scraper {
 	//TODO: Replace with a non-concurrent approach
-	for result := range scraper.FindAll(filters) {
+	for result := range scraper.FindAll(filter) {
 		return result
 	}
 	return nil
 }
 
 /*
-FindAll returns all nodes matching the provided Filters
+FindAll returns all nodes matching the provided Filter
+TODO: better way to track completion?
 */
-func (scraper Scraper) FindAll(filters Filters) <-chan *Scraper {
-	filters.build()
+func (scraper Scraper) FindAll(filter Filter) <-chan *Scraper {
+	filter.build()
 	operations := sync.WaitGroup{}
-	matchingNodes := make(chan *Scraper, 1)
-
-	findInNode := func(node *html.Node) {
-		if filters.match(node) {
+	matchingNodes := make(chan *Scraper)
+	isMatching := func(node *html.Node) {
+		if filter.match(node) {
 			nodeScraper, _ := NewFromNode(node)
 			matchingNodes <- nodeScraper
 		}
 	}
 
 	operations.Add(1)
-	go searchTreeLayer(&operations, scraper.Content(), findInNode)
+	go searchNode(&operations, scraper.Content(), isMatching)
 
 	go func(operations *sync.WaitGroup) {
 		operations.Wait()
@@ -161,18 +160,21 @@ func (scraper Scraper) FindAll(filters Filters) <-chan *Scraper {
 	return matchingNodes
 }
 
-func searchTreeLayer(operations *sync.WaitGroup, node *html.Node, callable func(node2 *html.Node)) {
-	//TODO: Benchmark synchronous approach (remove goroutine calls and WaitGroup)
+/*
+//TODO: Benchmark synchronous approach (remove goroutine calls and WaitGroup)
+//TODO: can isMatching have mp side effects?
+*/
+func searchNode(operations *sync.WaitGroup, node *html.Node, isMatching func(node2 *html.Node)) {
+	defer operations.Done()
 	for subNode := node; subNode != nil; subNode = subNode.NextSibling {
 		if subNode.Type == html.TextNode {
 			continue
 		}
-		callable(subNode)
+		isMatching(subNode)
 
 		operations.Add(1)
-		go searchTreeLayer(operations, subNode.FirstChild, callable)
+		go searchNode(operations, subNode.FirstChild, isMatching)
 	}
-	operations.Done()
 }
 
 /*
@@ -211,17 +213,13 @@ func (scraper Scraper) getLastSubNode(node *html.Node) *html.Node {
 /*
 build generates a composite function that includes all filter predicates,
 using closures for eager evaluation of the values.
+TODO: reconsider fault tolerance
 */
-func (filter *Filters) build() {
+func (filter *Filter) build() {
 	if filter.match != nil {
 		return
 	}
 	var predicates []predicate
-
-	// Default pass-through filter
-	if filter.Attributes == nil && filter.Tag == "" {
-		predicates = append(predicates, func(_ *html.Node) bool { return true })
-	}
 
 	if filter.Tag != "" {
 		predicateFunc := func(value string) func(node *html.Node) bool {
@@ -233,34 +231,26 @@ func (filter *Filters) build() {
 		predicates = append(predicates, predicateFunc)
 	}
 
-	for attribute, attributeValue := range filter.Attributes {
-		predicateFunc := func(attribute string, attributeValue string) func(node *html.Node) bool {
+	for attribute := range filter.Attributes {
+		predicateFunc := func(attributeKey string, attributeValue string) predicate {
 			return func(node *html.Node) bool {
 				for _, nodeAttribute := range node.Attr {
-					if nodeAttribute.Key == attribute && nodeAttribute.Val == attributeValue {
+					NormalizedNodeAttributeValue := fmt.Sprintf(" %v ", nodeAttribute.Val)
+					NormalizedAttributeValue := fmt.Sprintf(" %v ", attributeValue)
+					if nodeAttribute.Key == attributeKey && strings.Contains(NormalizedNodeAttributeValue, NormalizedAttributeValue) {
 						return true
 					}
 				}
 				return false
 			}
-		}(attribute, attributeValue)
+		}(attribute, filter.Attributes[attribute])
 
 		predicates = append(predicates, predicateFunc)
 	}
 
-	for _, attributeKey := range filter.AttributeKeys {
-		predicateFunc := func(attributeKey string) func(node *html.Node) bool {
-			return func(node *html.Node) bool {
-				for _, nodeAttribute := range node.Attr {
-					if nodeAttribute.Key == attributeKey {
-						return true
-					}
-				}
-				return false
-			}
-		}(attributeKey)
-
-		predicates = append(predicates, predicateFunc)
+	// Default pass-through filter
+	if len(predicates) == 0 {
+		predicates = []predicate{func(_ *html.Node) bool { return true }}
 	}
 
 	filter.match = func(node *html.Node) bool {
