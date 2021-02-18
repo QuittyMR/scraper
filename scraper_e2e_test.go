@@ -115,7 +115,3 @@ func TestE2E_FindAll(t *testing.T) {
 		})
 	}
 }
-
-func TestE2E_DataExtraction(t *testing.T) {
-
-}

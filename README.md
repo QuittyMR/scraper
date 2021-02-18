@@ -2,37 +2,41 @@
 Is a straightforward Go web-scraper with a simple, flexible interface, inspired by [BeautifulSoup](https://www.crummy.com/software/BeautifulSoup/bs4/doc/).
 
 ## Quickstart
-* Search for CSS imports using a URL:
-```
-myScraper, _ := scraper.NewFromURI("Your URL goes here")
-parameters := scraper.Parameters{"rel": "stylesheet"}
-fmt.Println(myScraper.FindAll(scraper.Filters{Tag:"link", Parameters:parameters}))
-```
+1. Create a `Scraper` from any `io.ReadCloser` compatible type:
+   ```
+   // http.Response.Body
+   response, _ := http.Get("URL goes here")
+   page, _ := scraper.NewFromBuffer(response.Body)
+   
+   // os.File
+   fileHandle, _ := os.Open("file name goes here")
+   page, _ := NewFromBuffer(fileHandle)
+   ```
 
-* Implement your own http request and search the response for tables:
-```
-response, _ := http.Get(url)
-myScraper, _ := scraper.NewFromResponse(response)
-fmt.Println(myScraper.FindAll(scraper.Filters{Tag:"table"}))
-```
-
-* Search for all headers of all tables having a certain class:
-```
-myScraper, _ := scraper.NewFromURI("Your URL goes here")
-parameters := scraper.Parameters{"class":"someClass"}
-for _, table := range myScraper.FindAll(scraper.Filters{Tag:"table", Parameters:parameters}) {
-    fmt.Println(table.FindAll(scraper.Filters{Tag:"th"}))
-}
-```
-
-* Render the HTML of Github's code-block:
-```
-myScraper, _ := scraper.NewFromURI("Some Github code page")
-myScraper.Content()
-```
+2. Construct a `Scraper.Filter` with one or more criteria:
+   ```
+   filter := scraper.Filter{
+      Tag: "div",
+      Attributes: scraper.Attributes{
+         "id":    "div-1",
+         "class": "tp-modal",
+      },
+   }
+   ```
+3. Use the `Filter` to run a concurrent search on your `Scraper` page.    
+   Every returned element is a `Scraper` page that can be searched:
+   ```
+   for element := range page.FindAll(filter) {
+      for link := range element.FindAll(Filter{Tag:"a"}) {
+         fmt.Printf("URL: %v found under %v", link.Attributes()["href"], element.Type())
+      }
+   }
+   ```
 
 ## Next steps
 * ~~Find and FindOne implementations~~
-* Concurrent scraping
+* ~~Concurrent scraping~~
+* ~~Resilience for broken pages (BeautifulSoup-esque)~~
+* Support for wildcards in attributes
 * Tests
-* Resilience for broken pages (BeautifulSoup-esque)
+* Full documentation
