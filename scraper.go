@@ -128,10 +128,11 @@ Note that this method is currently very inefficient and needs to be reimplemente
 */
 func (scraper Scraper) Find(filter Filter) *Scraper {
 	//TODO: Replace with a non-concurrent approach
-	for result := range scraper.FindAll(filter) {
-		return result
+	result, ok := <-scraper.FindAll(filter)
+	if !ok {
+		return nil
 	}
-	return nil
+	return result
 }
 
 /*
@@ -140,7 +141,6 @@ TODO: better way to track completion?
 */
 func (scraper Scraper) FindAll(filter Filter) <-chan *Scraper {
 	filter.build()
-	operations := sync.WaitGroup{}
 	matchingNodes := make(chan *Scraper)
 	isMatching := func(node *html.Node) {
 		if filter.match(node) {
@@ -149,7 +149,9 @@ func (scraper Scraper) FindAll(filter Filter) <-chan *Scraper {
 		}
 	}
 
+	operations := sync.WaitGroup{}
 	operations.Add(1)
+
 	go searchNode(&operations, scraper.Content(), isMatching)
 
 	go func(operations *sync.WaitGroup) {
@@ -170,9 +172,9 @@ func searchNode(operations *sync.WaitGroup, node *html.Node, isMatching func(nod
 		if subNode.Type == html.TextNode {
 			continue
 		}
+		operations.Add(1)
 		isMatching(subNode)
 
-		operations.Add(1)
 		go searchNode(operations, subNode.FirstChild, isMatching)
 	}
 }

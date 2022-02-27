@@ -94,6 +94,17 @@ func TestE2E_FindAll(t *testing.T) {
 		//	},
 		//	want: 2,
 		//},
+		{
+			name: "France Passion, entry page",
+			fields: fields{
+				uri: "france-passion.com",
+				filters: Filter{
+					Tag:        "i",
+					Attributes: Attributes{"class": "toolTip"},
+				},
+			},
+			want: 9,
+		},
 	}
 
 	for _, tt := range tests {
@@ -106,6 +117,135 @@ func TestE2E_FindAll(t *testing.T) {
 			for element := range page.FindAll(tt.fields.filters) {
 				if isDebug {
 					log.Printf("%v with %v (%v)", element.Type(), element.Attributes(), element.TextOptimistic())
+				}
+				num++
+			}
+			if num != tt.want {
+				t.Errorf("Matching elements: %v, want %v", num, tt.want)
+			}
+		})
+	}
+}
+
+func TestE2E_FindAll_fluentInterface(t *testing.T) {
+	type fields struct {
+		uri          string
+		step1Filters Filter
+		step2Filters Filter
+	}
+	tests := []struct {
+		name   string
+		fields fields
+		want   int
+	}{
+		{
+			name: "France Passion, entry page",
+			fields: fields{
+				uri: "france-passion.com",
+				step1Filters: Filter{
+					Tag:        "ul",
+					Attributes: Attributes{"class": "carac"},
+				},
+				step2Filters: Filter{
+					Tag:        "i",
+					Attributes: Attributes{"class": "toolTip"},
+				},
+			},
+			want: 9,
+		},
+		{
+			name: "France Passion, entry page",
+			fields: fields{
+				uri: "france-passion.com",
+				step1Filters: Filter{
+					Tag:        "div",
+					Attributes: Attributes{"class": "options"},
+				},
+				step2Filters: Filter{
+					Tag:        "span",
+					Attributes: Attributes{"class": "toolTip"},
+				},
+			},
+			want: 6,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var num int
+			page, err := getScraperFromFile(tt.fields.uri)
+			if err != nil {
+				t.Fatal("Error while parsing page: ", err)
+			}
+			for element := range page.FindAll(tt.fields.step1Filters) {
+				for internalElement := range element.FindAll(tt.fields.step2Filters) {
+					if isDebug {
+						log.Printf("%v with %v (%v)", internalElement.Type(), internalElement.Attributes(), internalElement.TextOptimistic())
+					}
+					num++
+				}
+			}
+			if num != tt.want {
+				t.Errorf("Matching elements: %v, want %v", num, tt.want)
+			}
+		})
+	}
+}
+
+func TestE2E_Find_FindAll_fluentInterface(t *testing.T) {
+	type fields struct {
+		uri          string
+		step1Filters Filter
+		step2Filters Filter
+	}
+	tests := []struct {
+		name   string
+		fields fields
+		want   int
+	}{
+		{
+			name: "France Passion, entry page",
+			fields: fields{
+				uri: "france-passion.com",
+				step1Filters: Filter{
+					Tag:        "ul",
+					Attributes: Attributes{"class": "carac"},
+				},
+				step2Filters: Filter{
+					Tag:        "i",
+					Attributes: Attributes{"class": "toolTip"},
+				},
+			},
+			want: 9,
+		},
+		{
+			name: "France Passion, entry page",
+			fields: fields{
+				uri: "france-passion.com",
+				step1Filters: Filter{
+					Tag:        "div",
+					Attributes: Attributes{"class": "options"},
+				},
+				step2Filters: Filter{
+					Tag:        "span",
+					Attributes: Attributes{"class": "toolTip"},
+				},
+			},
+			want: 6,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var num int
+			page, err := getScraperFromFile(tt.fields.uri)
+			if err != nil {
+				t.Fatal("Error while parsing page: ", err)
+			}
+			element := page.Find(tt.fields.step1Filters)
+			for internalElement := range element.FindAll(tt.fields.step2Filters) {
+				if isDebug {
+					log.Printf("%v with %v (%v)", internalElement.Type(), internalElement.Attributes(), internalElement.TextOptimistic())
 				}
 				num++
 			}

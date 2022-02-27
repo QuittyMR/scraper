@@ -1,14 +1,15 @@
 package scraper
 
 import (
-	"github.com/pkg/errors"
+	"errors"
+	"fmt"
 )
 
 func baseError(err error, message string) error {
 	if err == nil {
 		err = errors.New(message)
 	} else {
-		err = errors.Wrap(err, message)
+		err = errors.New(fmt.Sprintf("%s->\n%s", err.Error(), message))
 	}
 
 	return err
